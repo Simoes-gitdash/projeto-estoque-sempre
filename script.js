@@ -10,7 +10,6 @@ import {
   setDoc,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
-import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js";
 
 const STORAGE_KEY = "estoqueMovimentacoes";
 const STOCK_KEY = "estoqueQuantidadesIniciais";
@@ -94,6 +93,7 @@ const movimentacoesLocaisIniciais = [...movimentacoes];
 let mesFiltrado = "";
 let anoVisivelFiltro = new Date().getFullYear();
 let migracaoMovimentacoesTentada = false;
+let sincronizacaoInicialMovimentacoes = true;
 
 preencherLocais(origemSelect);
 preencherLocais(destinoSelect);
@@ -290,7 +290,7 @@ tableBody.addEventListener("click", async (event) => {
     }
 
     try {
-      gerarTermoPdf(movimentacao, solicitante.trim());
+      await gerarTermoPdf(movimentacao, solicitante.trim());
     } catch (error) {
       alert("Não foi possível gerar o termo em PDF. Tente novamente.");
       console.error(error);
@@ -418,19 +418,42 @@ async function salvarEstoqueInicial() {
 
 function iniciarSincronizacaoFirebase() {
   onSnapshot(movimentacoesRef, (snapshot) => {
+    const movimentacoesRemotas = snapshot.docs
+      .map((documento) => ({ id: documento.id, ...documento.data() }))
+      .filter((movimentacao) => movimentacao.item && movimentacao.dataEnvio);
+
+    if (sincronizacaoInicialMovimentacoes && movimentacoesLocaisIniciais.length > 0) {
+      const movimentacoesMescladas = mesclarMovimentacoes(movimentacoesRemotas, movimentacoesLocaisIniciais);
+      const idsRemotos = new Set(movimentacoesRemotas.map((movimentacao) => movimentacao.id));
+      const movimentacoesLocaisAusentes = movimentacoesLocaisIniciais.filter((movimentacao) => !idsRemotos.has(movimentacao.id));
+
+      movimentacoes = ordenarMovimentacoes(movimentacoesMescladas);
+      salvarMovimentacoes();
+      renderizar();
+      sincronizacaoInicialMovimentacoes = false;
+
+      if (!migracaoMovimentacoesTentada && movimentacoesLocaisAusentes.length > 0) {
+        migracaoMovimentacoesTentada = true;
+        migrarMovimentacoesLocais(movimentacoesLocaisAusentes).catch((error) => {
+          console.error(error);
+        });
+      }
+
+      return;
+    }
+
+    sincronizacaoInicialMovimentacoes = false;
+
     if (!migracaoMovimentacoesTentada && snapshot.empty && movimentacoesLocaisIniciais.length > 0) {
       migracaoMovimentacoesTentada = true;
-      migrarMovimentacoesLocais().catch((error) => {
+      migrarMovimentacoesLocais(movimentacoesLocaisIniciais).catch((error) => {
         console.error(error);
       });
       return;
     }
 
     migracaoMovimentacoesTentada = true;
-    movimentacoes = snapshot.docs
-      .map((documento) => ({ id: documento.id, ...documento.data() }))
-      .filter((movimentacao) => movimentacao.item && movimentacao.dataEnvio)
-      .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+    movimentacoes = ordenarMovimentacoes(movimentacoesRemotas);
 
     salvarMovimentacoes();
     renderizar();
@@ -457,10 +480,10 @@ function iniciarSincronizacaoFirebase() {
   });
 }
 
-async function migrarMovimentacoesLocais() {
+async function migrarMovimentacoesLocais(movimentacoesParaMigrar) {
   const batch = writeBatch(db);
 
-  movimentacoesLocaisIniciais.forEach((movimentacao) => {
+  movimentacoesParaMigrar.forEach((movimentacao) => {
     const id = movimentacao.id || gerarId();
     batch.set(doc(db, MOVEMENTS_COLLECTION, id), {
       ...movimentacao,
@@ -473,7 +496,26 @@ async function migrarMovimentacoesLocais() {
   await batch.commit();
 }
 
-function gerarTermoPdf(movimentacao, solicitante) {
+function mesclarMovimentacoes(remotas, locais) {
+  const porId = new Map();
+
+  [...locais, ...remotas].forEach((movimentacao) => {
+    if (!movimentacao.id) {
+      movimentacao.id = gerarId();
+    }
+
+    porId.set(movimentacao.id, movimentacao);
+  });
+
+  return Array.from(porId.values());
+}
+
+function ordenarMovimentacoes(lista) {
+  return [...lista].sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+}
+
+async function gerarTermoPdf(movimentacao, solicitante) {
+  const { jsPDF } = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const quantidades = obterQuantidadesTermo(movimentacao);
   const dataTermo = formatarData(movimentacao.dataEnvio);
