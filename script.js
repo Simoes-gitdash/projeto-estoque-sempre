@@ -1,5 +1,35 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  getFirestore,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  writeBatch
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
 const STORAGE_KEY = "estoqueMovimentacoes";
 const STOCK_KEY = "estoqueQuantidadesIniciais";
+const MOVEMENTS_COLLECTION = "movimentacoes";
+const SETTINGS_COLLECTION = "configuracoes";
+const STOCK_DOC_ID = "estoqueInicial";
+const firebaseConfig = {
+  apiKey: "AIzaSyAupVYh-mFogwwCtPJwfrzyVuAH81nZKZQ",
+  authDomain: "estoque-sempre.firebaseapp.com",
+  projectId: "estoque-sempre",
+  storageBucket: "estoque-sempre.firebasestorage.app",
+  messagingSenderId: "74014345402",
+  appId: "1:74014345402:web:8fdc2ae4f2c13498975a83",
+  measurementId: "G-4X8Y5YM25G"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const movimentacoesRef = collection(db, MOVEMENTS_COLLECTION);
+const estoqueInicialRef = doc(db, SETTINGS_COLLECTION, STOCK_DOC_ID);
 const CENTRO_DISTRIBUICAO = "Centro de Distribuição";
 const ITENS = ["Token", "Cartão", "Leitora"];
 const LOCAIS = [
@@ -59,8 +89,10 @@ const stockLeitoraInput = document.querySelector("#stockLeitora");
 
 let movimentacoes = carregarMovimentacoes();
 let estoqueInicial = carregarEstoqueInicial();
+const movimentacoesLocaisIniciais = [...movimentacoes];
 let mesFiltrado = "";
 let anoVisivelFiltro = new Date().getFullYear();
+let migracaoMovimentacoesTentada = false;
 
 preencherLocais(origemSelect);
 preencherLocais(destinoSelect);
@@ -68,7 +100,7 @@ renderizarSeletorMes();
 atualizarLabelFiltroMes();
 dataEnvioInput.valueAsDate = new Date();
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const origem = obterLocalSelecionado(origemSelect, origemOutroInput);
@@ -93,17 +125,27 @@ form.addEventListener("submit", (event) => {
     origem,
     destino,
     dataEnvio: document.querySelector("#dataEnvio").value,
-    observacao: document.querySelector("#observacao").value.trim()
+    observacao: document.querySelector("#observacao").value.trim(),
+    criadoEm: Date.now()
   };
 
   movimentacoes.unshift(novaMovimentacao);
-  salvarMovimentacoes();
   renderizar();
-  form.reset();
-  dataEnvioInput.valueAsDate = new Date();
-  alternarCampoOutro(origemSelect, origemOutroField, origemOutroInput);
-  alternarCampoOutro(destinoSelect, destinoOutroField, destinoOutroInput);
-  document.querySelector("#item").focus();
+
+  try {
+    await salvarMovimentacao(novaMovimentacao);
+    form.reset();
+    dataEnvioInput.valueAsDate = new Date();
+    alternarCampoOutro(origemSelect, origemOutroField, origemOutroInput);
+    alternarCampoOutro(destinoSelect, destinoOutroField, destinoOutroInput);
+    document.querySelector("#item").focus();
+  } catch (error) {
+    movimentacoes = movimentacoes.filter((movimentacao) => movimentacao.id !== novaMovimentacao.id);
+    salvarMovimentacoes();
+    renderizar();
+    alert("Não foi possível salvar no Firebase. Verifique a conexão e tente novamente.");
+    console.error(error);
+  }
 });
 
 origemSelect.addEventListener("change", () => {
@@ -167,17 +209,27 @@ openStockModalButton.addEventListener("click", abrirModalEstoque);
 closeStockModalButton.addEventListener("click", fecharModalEstoque);
 cancelStockModalButton.addEventListener("click", fecharModalEstoque);
 
-clearStockButton.addEventListener("click", () => {
+clearStockButton.addEventListener("click", async () => {
   const confirmar = confirm("Deseja limpar todo o estoque do Centro de Distribuição?");
 
   if (!confirmar) {
     return;
   }
 
+  const estoqueAnterior = { ...estoqueInicial };
   estoqueInicial = criarSaldosZerados();
-  salvarEstoqueInicial();
   renderizar();
-  fecharModalEstoque();
+
+  try {
+    await salvarEstoqueInicial();
+    fecharModalEstoque();
+  } catch (error) {
+    estoqueInicial = estoqueAnterior;
+    salvarEstoqueInicialLocal();
+    renderizar();
+    alert("Não foi possível limpar o estoque no Firebase. Tente novamente.");
+    console.error(error);
+  }
 });
 
 stockModal.addEventListener("click", (event) => {
@@ -192,19 +244,29 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-stockAdjustForm.addEventListener("submit", (event) => {
+stockAdjustForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
+  const estoqueAnterior = { ...estoqueInicial };
   estoqueInicial.Token += obterQuantidadeInput(stockTokenInput);
   estoqueInicial["Cartão"] += obterQuantidadeInput(stockCartaoInput);
   estoqueInicial.Leitora += obterQuantidadeInput(stockLeitoraInput);
 
-  salvarEstoqueInicial();
   renderizar();
-  fecharModalEstoque();
+
+  try {
+    await salvarEstoqueInicial();
+    fecharModalEstoque();
+  } catch (error) {
+    estoqueInicial = estoqueAnterior;
+    salvarEstoqueInicialLocal();
+    renderizar();
+    alert("Não foi possível salvar o estoque no Firebase. Tente novamente.");
+    console.error(error);
+  }
 });
 
-tableBody.addEventListener("click", (event) => {
+tableBody.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-delete-id]");
 
   if (!button) {
@@ -212,12 +274,22 @@ tableBody.addEventListener("click", (event) => {
   }
 
   const id = button.dataset.deleteId;
+  const movimentacoesAnteriores = [...movimentacoes];
   movimentacoes = movimentacoes.filter((movimentacao) => movimentacao.id !== id);
-  salvarMovimentacoes();
   renderizar();
+
+  try {
+    await excluirMovimentacao(id);
+  } catch (error) {
+    movimentacoes = movimentacoesAnteriores;
+    salvarMovimentacoes();
+    renderizar();
+    alert("Não foi possível excluir no Firebase. Tente novamente.");
+    console.error(error);
+  }
 });
 
-limparTudoButton.addEventListener("click", () => {
+limparTudoButton.addEventListener("click", async () => {
   if (movimentacoes.length === 0) {
     return;
   }
@@ -228,9 +300,19 @@ limparTudoButton.addEventListener("click", () => {
     return;
   }
 
+  const movimentacoesAnteriores = [...movimentacoes];
   movimentacoes = [];
-  salvarMovimentacoes();
   renderizar();
+
+  try {
+    await limparMovimentacoesRemotas();
+  } catch (error) {
+    movimentacoes = movimentacoesAnteriores;
+    salvarMovimentacoes();
+    renderizar();
+    alert("Não foi possível excluir todas as movimentações no Firebase. Tente novamente.");
+    console.error(error);
+  }
 });
 
 function carregarMovimentacoes() {
@@ -265,8 +347,98 @@ function salvarMovimentacoes() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(movimentacoes));
 }
 
-function salvarEstoqueInicial() {
+function salvarEstoqueInicialLocal() {
   localStorage.setItem(STOCK_KEY, JSON.stringify(estoqueInicial));
+}
+
+async function salvarMovimentacao(movimentacao) {
+  salvarMovimentacoes();
+  await setDoc(doc(db, MOVEMENTS_COLLECTION, movimentacao.id), {
+    ...movimentacao,
+    atualizadoEm: serverTimestamp()
+  });
+}
+
+async function excluirMovimentacao(id) {
+  salvarMovimentacoes();
+  await deleteDoc(doc(db, MOVEMENTS_COLLECTION, id));
+}
+
+async function limparMovimentacoesRemotas() {
+  salvarMovimentacoes();
+  const snapshot = await getDocs(movimentacoesRef);
+  const batch = writeBatch(db);
+
+  snapshot.forEach((documento) => {
+    batch.delete(documento.ref);
+  });
+
+  await batch.commit();
+}
+
+async function salvarEstoqueInicial() {
+  salvarEstoqueInicialLocal();
+  await setDoc(estoqueInicialRef, {
+    saldos: estoqueInicial,
+    atualizadoEm: serverTimestamp()
+  });
+}
+
+function iniciarSincronizacaoFirebase() {
+  onSnapshot(movimentacoesRef, (snapshot) => {
+    if (!migracaoMovimentacoesTentada && snapshot.empty && movimentacoesLocaisIniciais.length > 0) {
+      migracaoMovimentacoesTentada = true;
+      migrarMovimentacoesLocais().catch((error) => {
+        console.error(error);
+      });
+      return;
+    }
+
+    migracaoMovimentacoesTentada = true;
+    movimentacoes = snapshot.docs
+      .map((documento) => ({ id: documento.id, ...documento.data() }))
+      .filter((movimentacao) => movimentacao.item && movimentacao.dataEnvio)
+      .sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0));
+
+    salvarMovimentacoes();
+    renderizar();
+  }, (error) => {
+    console.error(error);
+    alert("Não foi possível carregar as movimentações do Firebase. Mostrando dados salvos neste navegador.");
+  });
+
+  onSnapshot(estoqueInicialRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      salvarEstoqueInicial().catch((error) => {
+        console.error(error);
+      });
+      return;
+    }
+
+    const dados = snapshot.data();
+    estoqueInicial = { ...criarSaldosZerados(), ...(dados.saldos || {}) };
+    salvarEstoqueInicialLocal();
+    renderizar();
+  }, (error) => {
+    console.error(error);
+    alert("Não foi possível carregar o estoque inicial do Firebase. Mostrando dados salvos neste navegador.");
+  });
+}
+
+async function migrarMovimentacoesLocais() {
+  const batch = writeBatch(db);
+
+  movimentacoesLocaisIniciais.forEach((movimentacao) => {
+    const id = movimentacao.id || gerarId();
+    batch.set(doc(db, MOVEMENTS_COLLECTION, id), {
+      ...movimentacao,
+      id,
+      criadoEm: movimentacao.criadoEm || Date.now(),
+      atualizadoEm: serverTimestamp()
+    });
+  });
+
+  await batch.commit();
 }
 
 function abrirModalEstoque() {
@@ -453,3 +625,4 @@ function escapeHtml(texto) {
 }
 
 renderizar();
+iniciarSincronizacaoFirebase();
