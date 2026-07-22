@@ -683,6 +683,29 @@ td {
   font-weight: 800;
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.term-button {
+  min-height: 34px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0 12px;
+  font-size: 0.82rem;
+  box-shadow: none;
+}
+
+.term-button:hover {
+  background: #dbeafe;
+  color: #1e40af;
+  box-shadow: none;
+}
+
 .delete-button {
   min-height: 34px;
   background: #fee2e2;

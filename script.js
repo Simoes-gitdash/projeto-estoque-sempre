@@ -10,6 +10,7 @@ import {
   setDoc,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js";
 
 const STORAGE_KEY = "estoqueMovimentacoes";
 const STOCK_KEY = "estoqueQuantidadesIniciais";
@@ -267,6 +268,37 @@ stockAdjustForm.addEventListener("submit", async (event) => {
 });
 
 tableBody.addEventListener("click", async (event) => {
+  const termButton = event.target.closest("[data-term-id]");
+
+  if (termButton) {
+    const movimentacao = movimentacoes.find((item) => item.id === termButton.dataset.termId);
+
+    if (!movimentacao) {
+      alert("Movimentação não encontrada para gerar o termo.");
+      return;
+    }
+
+    const solicitante = prompt("Digite o nome do SOLICITANTE:");
+
+    if (solicitante === null) {
+      return;
+    }
+
+    if (!solicitante.trim()) {
+      alert("Informe o nome do solicitante para gerar o termo.");
+      return;
+    }
+
+    try {
+      gerarTermoPdf(movimentacao, solicitante.trim());
+    } catch (error) {
+      alert("Não foi possível gerar o termo em PDF. Tente novamente.");
+      console.error(error);
+    }
+
+    return;
+  }
+
   const button = event.target.closest("[data-delete-id]");
 
   if (!button) {
@@ -441,6 +473,89 @@ async function migrarMovimentacoesLocais() {
   await batch.commit();
 }
 
+function gerarTermoPdf(movimentacao, solicitante) {
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const quantidades = obterQuantidadesTermo(movimentacao);
+  const dataTermo = formatarData(movimentacao.dataEnvio);
+
+  pdf.setProperties({
+    title: "Termo de Transferência",
+    subject: "Termo de transferência de estoque",
+    author: "Estoque Sempre"
+  });
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(16);
+  pdf.text("TERMO DE TRANSFERÊNCIA", 105, 28, { align: "center" });
+
+  pdf.setLineWidth(0.3);
+  pdf.line(30, 34, 180, 34);
+
+  pdf.setFontSize(11);
+  pdf.setFont("helvetica", "bold");
+  pdf.text("DATA TRANSF:", 30, 52);
+  pdf.text("SOLICITANTE:", 30, 62);
+  pdf.text("ORIGEM:", 30, 72);
+  pdf.text("DESTINO:", 30, 82);
+
+  pdf.setFont("helvetica", "normal");
+  pdf.text(dataTermo, 62, 52);
+  pdf.text(solicitante.toUpperCase(), 62, 62);
+  pdf.text(movimentacao.origem.toUpperCase(), 62, 72);
+  pdf.text(movimentacao.destino.toUpperCase(), 62, 82);
+
+  pdf.setFont("helvetica", "bold");
+  pdf.text("PRODUTO", 30, 104);
+  pdf.text("QUANTIDADE", 180, 104, { align: "right" });
+  pdf.line(30, 108, 180, 108);
+
+  desenharLinhaProduto(pdf, "TOKEN SEMPRE", quantidades.Token, 118);
+  desenharLinhaProduto(pdf, "CARTÃO SEMPRE", quantidades["Cartão"], 130);
+  desenharLinhaProduto(pdf, "LEITORA SEMPRE", quantidades.Leitora, 142);
+
+  pdf.setFont("helvetica", "bold");
+  pdf.text("ORIGEM", 62, 206, { align: "center" });
+  pdf.text("DESTINO", 148, 206, { align: "center" });
+
+  pdf.setFont("helvetica", "normal");
+  pdf.text(movimentacao.origem.toUpperCase(), 62, 218, { align: "center", maxWidth: 70 });
+  pdf.text(movimentacao.destino.toUpperCase(), 148, 218, { align: "center", maxWidth: 70 });
+
+  pdf.line(30, 238, 94, 238);
+  pdf.line(116, 238, 180, 238);
+
+  pdf.setFontSize(9);
+  pdf.text("Assinatura origem", 62, 245, { align: "center" });
+  pdf.text("Assinatura destino", 148, 245, { align: "center" });
+
+  pdf.save(`termo-transferencia-${criarNomeArquivo(dataTermo)}.pdf`);
+}
+
+function desenharLinhaProduto(pdf, produto, quantidade, y) {
+  pdf.setFont("helvetica", "normal");
+  pdf.text(produto, 30, y);
+  pdf.setLineDashPattern([1, 1], 0);
+  pdf.line(70, y - 1, 168, y - 1);
+  pdf.setLineDashPattern([], 0);
+  pdf.text(String(quantidade), 180, y, { align: "right" });
+}
+
+function obterQuantidadesTermo(movimentacao) {
+  const quantidades = criarSaldosZerados();
+
+  if (Object.prototype.hasOwnProperty.call(quantidades, movimentacao.item)) {
+    quantidades[movimentacao.item] = movimentacao.quantidade;
+  }
+
+  return quantidades;
+}
+
+function criarNomeArquivo(data) {
+  return data
+    .replaceAll("/", "-")
+    .replace(/[^\d-]/g, "");
+}
+
 function abrirModalEstoque() {
   stockAdjustForm.reset();
   stockModal.classList.add("show");
@@ -594,9 +709,14 @@ function renderizar() {
       <td>${formatarData(movimentacao.dataEnvio)}</td>
       <td>${formatarObservacao(movimentacao.observacao)}</td>
       <td>
-        <button class="delete-button" type="button" data-delete-id="${movimentacao.id}">
-          Excluir
-        </button>
+        <div class="table-actions">
+          <button class="term-button" type="button" data-term-id="${movimentacao.id}">
+            TERMO
+          </button>
+          <button class="delete-button" type="button" data-delete-id="${movimentacao.id}">
+            Excluir
+          </button>
+        </div>
       </td>
     </tr>
   `).join("");
