@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle de Estoque</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <div class="hero-visual" aria-hidden="true">
+        <div class="hero-visual-orbit">
+          <img class="hero-visual-image" src="assets/estoque-pronto.png" alt="">
+        </div>
+      </div>
+
+      <div>
+        <p class="eyebrow">Estoque operacional</p>
+        <h1>Controle simples de Token, Cartão e Leitora</h1>
+        <p class="hero-text">Registre movimentações, acompanhe saldos e mantenha os dados salvos neste estoque.</p>
+      </div>
+
+      <div class="hero-side">
+        <div class="date-filter" aria-label="Filtro por data de envio">
+          <span class="filter-label">Mês</span>
+          <button class="month-trigger" id="monthFilterButton" type="button" aria-expanded="false">
+            <span id="monthFilterLabel">Todos os meses</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+
+          <div class="month-picker" id="monthPicker" aria-hidden="true">
+            <div class="month-picker-inner">
+              <div class="month-picker-header">
+                <button class="month-nav" id="previousYear" type="button" aria-label="Ano anterior">‹</button>
+                <strong id="monthPickerYear">2026</strong>
+                <button class="month-nav" id="nextYear" type="button" aria-label="Próximo ano">›</button>
+              </div>
+
+              <div class="month-grid" id="monthGrid"></div>
+
+              <div class="month-picker-actions">
+                <button class="month-action" id="clearDateFilter" type="button">Limpar</button>
+                <button class="month-action primary" id="currentMonthFilter" type="button">Este mês</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-badge">
+          <span id="totalMovimentacoes">0</span>
+          <small>movimentações</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="summary-toolbar" aria-label="Ações de estoque">
+      <div>
+        <p class="eyebrow">Saldos atuais</p>
+        <h2>Estoque no Centro de Distribuição</h2>
+      </div>
+      <button class="small-button" id="openStockModal" type="button">
+        <span aria-hidden="true">+</span>
+        Adicionar estoque
+      </button>
+    </section>
+
+    <section class="summary-grid" aria-label="Resumo de saldos">
+      <article class="summary-card token">
+        <div class="summary-content">
+          <div class="summary-icon-tile">
+            <img class="summary-card-icon" src="assets/token.png" alt="" aria-hidden="true">
+          </div>
+          <span>Token</span>
+          <strong id="saldoToken">0</strong>
+        </div>
+        <span class="summary-arrow" aria-hidden="true">›</span>
+      </article>
+      <article class="summary-card cartao">
+        <div class="summary-content">
+          <div class="summary-icon-tile">
+            <img class="summary-card-icon" src="assets/cartao.png" alt="" aria-hidden="true">
+          </div>
+          <span>Cartão</span>
+          <strong id="saldoCartao">0</strong>
+        </div>
+        <span class="summary-arrow" aria-hidden="true">›</span>
+      </article>
+      <article class="summary-card leitora">
+        <div class="summary-content">
+          <div class="summary-icon-tile">
+            <img class="summary-card-icon" src="assets/leitora.png" alt="" aria-hidden="true">
+          </div>
+          <span>Leitora</span>
+          <strong id="saldoLeitora">0</strong>
+        </div>
+        <span class="summary-arrow" aria-hidden="true">›</span>
+      </article>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel form-panel">
+        <div class="section-title">
+          <p class="eyebrow title-with-icon"><span aria-hidden="true">▣</span>Novo registro</p>
+          <h2>Cadastrar movimentação</h2>
+        </div>
+
+        <form id="movementForm">
+          <label>
+            Item
+            <select id="item" required>
+              <option value="">Selecione</option>
+              <option value="Token">Token</option>
+              <option value="Cartão">Cartão</option>
+              <option value="Leitora">Leitora</option>
+            </select>
+          </label>
+
+          <label>
+            Quantidade
+            <input id="quantidade" type="number" min="1" step="1" placeholder="Ex: 10" required>
+          </label>
+
+          <label>
+            Origem
+            <select id="origem" required>
+              <option value="">Selecione</option>
+            </select>
+          </label>
+
+          <label class="other-field" id="origemOutroField">
+            Outra origem
+            <input id="origemOutro" type="text" placeholder="Digite a origem">
+          </label>
+
+          <label>
+            Destino
+            <select id="destino" required>
+              <option value="">Selecione</option>
+            </select>
+          </label>
+
+          <label class="other-field" id="destinoOutroField">
+            Outro destino
+            <input id="destinoOutro" type="text" placeholder="Digite o destino">
+          </label>
+
+          <label>
+            Data de envio
+            <input id="dataEnvio" type="date" required>
+          </label>
+
+          <label>
+            Observação
+            <textarea id="observacao" rows="3" placeholder="Digite uma observação opcional"></textarea>
+          </label>
+
+          <button type="submit">Salvar movimentação</button>
+        </form>
+      </article>
+
+      <article class="panel table-panel">
+        <div class="table-header">
+          <div class="section-title">
+            <p class="eyebrow title-with-icon"><span aria-hidden="true">◷</span>Histórico</p>
+            <h2>Movimentações cadastradas</h2>
+          </div>
+          <button class="secondary-button" id="limparTudo" type="button">Limpar tudo</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Qtd.</th>
+                <th>Origem</th>
+                <th>Destino</th>
+                <th>Data</th>
+                <th>Obs.</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="movementTable"></tbody>
+          </table>
+
+          <div class="empty-state" id="emptyState">
+            <strong>Nenhuma movimentação cadastrada</strong>
+            <span>Preencha o formulário para começar o controle do estoque.</span>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="stockModal" aria-hidden="true">
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stockModalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Ajuste rápido</p>
+          <h2 id="stockModalTitle">Adicionar ao Centro de Distribuição</h2>
+        </div>
+        <button class="icon-button" id="closeStockModal" type="button" aria-label="Fechar">×</button>
+      </div>
+
+      <form id="stockAdjustForm" class="stock-form">
+        <label>
+          Token
+          <input id="stockToken" type="number" min="0" step="1" placeholder="0">
+        </label>
+
+        <label>
+          Cartão
+          <input id="stockCartao" type="number" min="0" step="1" placeholder="0">
+        </label>
+
+        <label>
+          Leitora
+          <input id="stockLeitora" type="number" min="0" step="1" placeholder="0">
+        </label>
+
+        <button class="clear-stock-button" id="clearStockButton" type="button">Limpar estoque</button>
+
+        <div class="modal-actions">
+          <button class="secondary-button" id="cancelStockModal" type="button">Cancelar</button>
+          <button type="submit">Salvar quantidades</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
