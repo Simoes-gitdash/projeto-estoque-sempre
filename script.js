@@ -515,7 +515,7 @@ function ordenarMovimentacoes(lista) {
 }
 
 async function gerarTermoPdf(movimentacao, solicitante) {
-  const { jsPDF } = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js");
+  const jsPDF = await carregarJsPdf();
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const quantidades = obterQuantidadesTermo(movimentacao);
   const dataTermo = formatarData(movimentacao.dataEnvio);
@@ -596,6 +596,37 @@ function criarNomeArquivo(data) {
   return data
     .replaceAll("/", "-")
     .replace(/[^\d-]/g, "");
+}
+
+function carregarJsPdf() {
+  if (window.jspdf && window.jspdf.jsPDF) {
+    return Promise.resolve(window.jspdf.jsPDF);
+  }
+
+  return new Promise((resolve, reject) => {
+    const scriptExistente = document.querySelector("[data-jspdf-loader]");
+
+    if (scriptExistente) {
+      scriptExistente.addEventListener("load", () => resolve(window.jspdf.jsPDF), { once: true });
+      scriptExistente.addEventListener("error", reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    script.async = true;
+    script.dataset.jspdfLoader = "true";
+    script.onload = () => {
+      if (window.jspdf && window.jspdf.jsPDF) {
+        resolve(window.jspdf.jsPDF);
+        return;
+      }
+
+      reject(new Error("Biblioteca jsPDF carregou sem exportar jsPDF."));
+    };
+    script.onerror = () => reject(new Error("Falha ao carregar a biblioteca jsPDF."));
+    document.head.appendChild(script);
+  });
 }
 
 function abrirModalEstoque() {
